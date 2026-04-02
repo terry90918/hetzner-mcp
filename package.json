@@ -24,11 +24,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/terry90918/hetzner-mcp.git"
+    "url": "git+https://github.com/jurislm/hetzner-mcp.git"
   },
-  "homepage": "https://github.com/terry90918/hetzner-mcp#readme",
+  "homepage": "https://github.com/jurislm/hetzner-mcp#readme",
   "bugs": {
-    "url": "https://github.com/terry90918/hetzner-mcp/issues"
+    "url": "https://github.com/jurislm/hetzner-mcp/issues"
   },
   "license": "MIT",
   "engines": {
