@@ -1,16 +1,17 @@
 {
-  "name": "hetzner-mcp-server",
+  "name": "hetzner-mcp",
   "version": "1.0.0",
-  "description": "MCP server for managing Hetzner Cloud infrastructure from Claude Code",
+  "description": "MCP server for managing Hetzner Cloud infrastructure",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "hetzner-mcp-server": "dist/index.js"
+    "hetzner-mcp": "dist/index.js"
   },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "prepare": "npm run build",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
   },
@@ -19,17 +20,15 @@
     "model-context-protocol",
     "hetzner",
     "cloud",
-    "claude",
-    "ai",
     "server-management"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nityeshaga/hetzner-mcp-server.git"
+    "url": "git+https://github.com/terry90918/hetzner-mcp.git"
   },
-  "homepage": "https://github.com/nityeshaga/hetzner-mcp-server#readme",
+  "homepage": "https://github.com/terry90918/hetzner-mcp#readme",
   "bugs": {
-    "url": "https://github.com/nityeshaga/hetzner-mcp-server/issues"
+    "url": "https://github.com/terry90918/hetzner-mcp/issues"
   },
   "license": "MIT",
   "engines": {
