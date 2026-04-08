@@ -1,5 +1,5 @@
 {
-  "name": "hetzner-mcp",
+  "name": "@jurislm/hetzner-mcp",
   "version": "1.0.0",
   "description": "MCP server for managing Hetzner Cloud infrastructure",
   "type": "module",
