@@ -42,8 +42,8 @@ Add to your MCP configuration (`.mcp.json` or `~/.claude/settings.json`):
 {
   "mcpServers": {
     "hetzner": {
-      "command": "npx",
-      "args": ["-y", "@jurislm/hetzner-mcp@latest"],
+      "command": "bunx",
+      "args": ["@jurislm/hetzner-mcp@latest"],
       "env": {
         "HETZNER_API_TOKEN": "your-api-token"
       }
