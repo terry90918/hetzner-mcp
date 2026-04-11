@@ -6,9 +6,7 @@ import {
   ListServerTypesResponse,
   ListImagesResponse,
   ListLocationsResponse,
-  HetznerServerType,
   HetznerImage,
-  HetznerLocation
 } from "../types.js";
 
 const ResponseFormatSchema = z.nativeEnum(ResponseFormat).default(ResponseFormat.MARKDOWN);
