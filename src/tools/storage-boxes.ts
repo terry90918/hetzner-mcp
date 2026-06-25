@@ -54,6 +54,29 @@ const STORAGE_BOX_PROTOCOL_KEYS = [
 // fails typecheck instead of silently filtering to false at runtime.
 const SUBACCOUNT_PROTOCOLS = ["ssh", "webdav", "samba"] as const satisfies readonly BooleanKeys<HetznerStorageBoxSubaccount>[];
 
+export interface StorageBoxStats {
+  used_bytes: number;
+  used_gib: number;
+  total_bytes: number;
+  total_gib: number;
+  available_gib: number;
+  usage_percent: number;
+}
+
+// Exported for unit testing.
+export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats {
+  const used_bytes = box.stats.size; // size = size_data + size_snapshots (total consumed)
+  const total_bytes = box.storage_box_type.size;
+  const GiB = 1024 ** 3;
+  const used_gib = used_bytes / GiB;
+  const total_gib = total_bytes / GiB;
+  const available_gib = total_gib - used_gib;
+  const usage_percent = total_bytes > 0
+    ? Math.round((used_bytes / total_bytes) * 10000) / 100
+    : 0;
+  return { used_bytes, used_gib, total_bytes, total_gib, available_gib, usage_percent };
+}
+
 // Exported for unit testing.
 export function formatBytes(bytes: number): string {
   const gib = bytes / (1024 ** 3);
@@ -1235,6 +1258,112 @@ Schedule options:
         };
       } catch (error) {
         return { content: [{ type: "text", text: handleApiError(error) }], isError: true };
+      }
+    }
+  );
+
+  // Get Storage Box Stats
+  server.registerTool(
+    "hetzner_get_storage_box_stats",
+    {
+      title: "Get Storage Box Stats",
+      description: `Get storage usage statistics for a specific Storage Box.
+
+Returns:
+- used_bytes / used_gib — current data usage
+- total_bytes / total_gib — plan capacity
+- available_gib — remaining free space
+- usage_percent — utilisation as a percentage (2 decimal places)
+
+Useful for dashboards, cron jobs, and pre-flight capacity checks before backup operations.`,
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("The Storage Box ID"),
+        response_format: ResponseFormatSchema.describe("Output format: 'markdown' or 'json'")
+      }).strict(),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const data = await makeStorageBoxApiRequest(`/storage_boxes/${params.id}`, GetStorageBoxResponseSchema);
+        const stats = computeStorageBoxStats(data.storage_box);
+
+        if (params.response_format === ResponseFormat.JSON) {
+          return {
+            content: [{ type: "text", text: JSON.stringify(stats, null, 2) }]
+          };
+        }
+
+        const lines = [
+          `# Storage Box ${params.id} — Usage Stats`,
+          "",
+          `- **Used**: ${formatBytes(stats.used_bytes)} (${stats.used_gib.toFixed(2)} GiB)`,
+          `- **Total**: ${formatBytes(stats.total_bytes)} (${stats.total_gib.toFixed(2)} GiB)`,
+          `- **Available**: ${stats.available_gib.toFixed(2)} GiB`,
+          `- **Usage**: ${stats.usage_percent.toFixed(2)}%`
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }]
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: handleApiError(error) }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Assert Storage Box Space
+  server.registerTool(
+    "hetzner_assert_storage_box_space",
+    {
+      title: "Assert Storage Box Space",
+      description: `Pre-flight space check: assert that a Storage Box has at least \`required_gib\` GiB of available space.
+
+Returns success if space is sufficient, or an error (isError: true) if space is insufficient.
+Designed for use in cron jobs and backup pipelines before executing storage-intensive operations.`,
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("The Storage Box ID"),
+        required_gib: z.number().positive().describe("Minimum required free space in GiB")
+      }).strict(),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const data = await makeStorageBoxApiRequest(`/storage_boxes/${params.id}`, GetStorageBoxResponseSchema);
+        const stats = computeStorageBoxStats(data.storage_box);
+
+        if (stats.available_gib >= params.required_gib) {
+          return {
+            content: [{
+              type: "text",
+              text: `✓ Storage Box ${params.id} has sufficient space: ${stats.available_gib.toFixed(2)} GiB available (required: ${params.required_gib} GiB, usage: ${stats.usage_percent.toFixed(2)}%).`
+            }]
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: `✗ Storage Box ${params.id} has insufficient space: ${stats.available_gib.toFixed(2)} GiB available but ${params.required_gib} GiB required (usage: ${stats.usage_percent.toFixed(2)}%, total: ${stats.total_gib.toFixed(2)} GiB).`
+          }],
+          isError: true
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: handleApiError(error) }],
+          isError: true
+        };
       }
     }
   );

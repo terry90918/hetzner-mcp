@@ -16,7 +16,8 @@ import {
   formatSnapshot,
   formatAction,
   paginatedFetch,
-  registerStorageBoxTools
+  registerStorageBoxTools,
+  computeStorageBoxStats
 } from "../../src/tools/storage-boxes.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { makeStorageBoxApiRequest } from "../../src/api.js";
@@ -424,7 +425,7 @@ function captureRegisteredTools(): CapturedTool[] {
 }
 
 describe("registerStorageBoxTools — handler integration (I-7)", () => {
-  it("registers exactly 20 tools with the expected names", () => {
+  it("registers exactly 22 tools with the expected names", () => {
     const tools = captureRegisteredTools();
     expect(tools.map((t) => t.name)).toEqual([
       "hetzner_list_storage_boxes",
@@ -446,6 +447,8 @@ describe("registerStorageBoxTools — handler integration (I-7)", () => {
       "hetzner_update_storage_box_access_settings",
       "hetzner_enable_storage_box_snapshot_plan",
       "hetzner_disable_storage_box_snapshot_plan",
+      "hetzner_get_storage_box_stats",
+      "hetzner_assert_storage_box_space",
       "hetzner_rollback_storage_box_snapshot"
     ]);
   });
@@ -1835,5 +1838,157 @@ describe("password tools — MCP plaintext security warning", () => {
   it("hetzner_reset_storage_box_password description warns about MCP plaintext password", () => {
     const tool = captureRegisteredTools().find((t) => t.name === "hetzner_reset_storage_box_password")!;
     expect(tool.opts.description).toMatch(/MCP|plaintext|log/i);
+  });
+});
+
+// ── computeStorageBoxStats ────────────────────────────────────────────────────
+
+describe("computeStorageBoxStats", () => {
+  const GiB = 1024 ** 3;
+
+  it("computes stats for a box with zero usage", () => {
+    const box = { ...baseBox, stats: { size: 0, size_data: 0, size_snapshots: 0 } };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.used_bytes).toBe(0);
+    expect(stats.used_gib).toBe(0);
+    expect(stats.total_bytes).toBe(GiB * 1024);
+    expect(stats.total_gib).toBeCloseTo(1024, 1);
+    expect(stats.available_gib).toBeCloseTo(1024, 1);
+    expect(stats.usage_percent).toBe(0);
+  });
+
+  it("computes stats when 69% used (707 GiB of 1024 GiB)", () => {
+    const used = Math.round(707 * GiB);
+    const box = { ...baseBox, stats: { size: used, size_data: used, size_snapshots: 0 } };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.used_gib).toBeCloseTo(707, 0);
+    expect(stats.total_gib).toBeCloseTo(1024, 0);
+    expect(stats.available_gib).toBeCloseTo(1024 - 707, 0);
+    expect(stats.usage_percent).toBeCloseTo(69.04, 1);
+  });
+
+  it("returns 0 usage_percent when total_bytes is 0 (guard against division by zero)", () => {
+    const box = {
+      ...baseBox,
+      storage_box_type: { ...baseBox.storage_box_type, size: 0 },
+      stats: { size: 0, size_data: 0, size_snapshots: 0 }
+    };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.usage_percent).toBe(0);
+  });
+
+  it("rounds usage_percent to 2 decimal places", () => {
+    const used = 1;
+    const total = 3;
+    const box = {
+      ...baseBox,
+      storage_box_type: { ...baseBox.storage_box_type, size: total },
+      stats: { size: used, size_data: used, size_snapshots: 0 }
+    };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.usage_percent).toBe(33.33);
+  });
+});
+
+// ── hetzner_get_storage_box_stats ────────────────────────────────────────────
+
+describe("hetzner_get_storage_box_stats", () => {
+  const GiB = 1024 ** 3;
+  const usedBox: HetznerStorageBox = {
+    ...baseBox,
+    storage_box_type: { ...baseBox.storage_box_type, size: 1024 * GiB },
+    stats: { size: Math.round(707 * GiB), size_data: Math.round(707 * GiB), size_snapshots: 0 }
+  };
+
+  it("returns JSON stats when response_format=json", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: usedBox });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_get_storage_box_stats")!;
+    const result = await tool.handler({ id: 1, response_format: "json" });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.used_gib).toBeCloseTo(707, 0);
+    expect(parsed.total_gib).toBeCloseTo(1024, 0);
+    expect(parsed.available_gib).toBeCloseTo(317, 0);
+    expect(parsed.usage_percent).toBeGreaterThan(60);
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns markdown stats with GiB labels", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: usedBox });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_get_storage_box_stats")!;
+    const result = await tool.handler({ id: 1, response_format: "markdown" });
+    expect(result.content[0].text).toMatch(/Usage Stats/);
+    expect(result.content[0].text).toMatch(/Used/);
+    expect(result.content[0].text).toMatch(/Available/);
+    expect(result.content[0].text).toMatch(/GiB/);
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns isError on API failure", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("network error"));
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_get_storage_box_stats")!;
+    const result = await tool.handler({ id: 1, response_format: "json" });
+    expect(result.isError).toBe(true);
+  });
+
+  it("has readOnlyHint: true", () => {
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_get_storage_box_stats")!;
+    expect(tool.opts.annotations?.readOnlyHint).toBe(true);
+    expect(tool.opts.annotations?.destructiveHint).toBe(false);
+  });
+});
+
+// ── hetzner_assert_storage_box_space ─────────────────────────────────────────
+
+describe("hetzner_assert_storage_box_space", () => {
+  const GiB = 1024 ** 3;
+
+  const makeBox = (usedGib: number, totalGib: number): HetznerStorageBox => ({
+    ...baseBox,
+    storage_box_type: { ...baseBox.storage_box_type, size: totalGib * GiB },
+    stats: { size: Math.round(usedGib * GiB), size_data: Math.round(usedGib * GiB), size_snapshots: 0 }
+  });
+
+  it("returns success when available space exceeds required_gib", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: makeBox(707, 1024) });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 15 });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toMatch(/sufficient/);
+  });
+
+  it("returns isError when available space is less than required_gib", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: makeBox(1010, 1024) });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 15 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/insufficient/);
+  });
+
+  it("returns success when available space exactly equals required_gib", async () => {
+    const totalGib = 1024;
+    const availableGib = 15;
+    mockedRequest.mockResolvedValueOnce({ storage_box: makeBox(totalGib - availableGib, totalGib) });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 15 });
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns isError on API failure", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("timeout"));
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 10 });
+    expect(result.isError).toBe(true);
+  });
+
+  it("has readOnlyHint: true", () => {
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    expect(tool.opts.annotations?.readOnlyHint).toBe(true);
+    expect(tool.opts.annotations?.destructiveHint).toBe(false);
+  });
+
+  it("rejects required_gib <= 0 at schema level", () => {
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = tool.opts.inputSchema?.safeParse({ id: 1, required_gib: 0 });
+    expect(result?.success).toBe(false);
   });
 });
