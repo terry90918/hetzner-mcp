@@ -8,6 +8,7 @@ import {
   ListLocationsResponseSchema,
   HetznerImage,
 } from "../types.js";
+import { escapeHtml } from "../utils.js";
 
 const ResponseFormatSchema = z.nativeEnum(ResponseFormat).default(ResponseFormat.MARKDOWN);
 
@@ -130,9 +131,11 @@ Use this to find the right image when creating a new server.`,
         }
 
         for (const [flavor, imgs] of Object.entries(byFlavor)) {
-          lines.push(`## ${flavor.charAt(0).toUpperCase() + flavor.slice(1)}`);
+          lines.push(`## ${escapeHtml(flavor.charAt(0).toUpperCase() + flavor.slice(1))}`);
           for (const img of imgs) {
-            lines.push(`- **${img.name}** - ${img.description} (${img.architecture})`);
+            // snapshot/backup images carry user-controlled name/description —
+            // escape before rendering into markdown, matching every other tool.
+            lines.push(`- **${escapeHtml(img.name)}** - ${escapeHtml(img.description)} (${escapeHtml(img.architecture)})`);
           }
           lines.push("");
         }
