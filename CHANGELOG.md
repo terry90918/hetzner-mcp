@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/jurislm/hetzner-mcp/compare/v1.4.2...v1.4.3) (2026-07-06)
+
+
+### Bug Fixes
+
+* **security:** patch vulnerable axios/form-data/hono and escape image output ([#48](https://github.com/jurislm/hetzner-mcp/issues/48)) ([af7dd06](https://github.com/jurislm/hetzner-mcp/commit/af7dd061d3a92131a3c9d355d81f878b9f276179))
+
 ## [1.4.2](https://github.com/jurislm/hetzner-mcp/compare/v1.4.1...v1.4.2) (2026-06-24)
 
 
