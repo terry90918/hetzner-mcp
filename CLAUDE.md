@@ -130,5 +130,5 @@ src/
 1. PR `develop` → `main` merge
 2. Release Please 自動建立版本 PR
 3. 合併版本 PR 後：
-   1. **先 pull 最新版本**（`git checkout main && git pull origin main`），確保本地包含 Release Please 合併後的版本號與 CHANGELOG
+   1. **先 pull 最新版本**（`git checkout main && git pull --ff-only origin main`），確保本地包含 Release Please 合併後的版本號與 CHANGELOG；使用 `--ff-only` 讓本地與遠端分歧時直接失敗，避免默默產生 merge commit 造成發布工作目錄不乾淨
    2. 再於最新版本上**手動執行** `bun publish --access public`
