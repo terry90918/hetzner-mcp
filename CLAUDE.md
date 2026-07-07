@@ -129,4 +129,6 @@ src/
 
 1. PR `develop` → `main` merge
 2. Release Please 自動建立版本 PR
-3. 合併版本 PR 後，**手動執行** `bun publish --access public`
+3. 合併版本 PR 後：
+   1. **先 pull 最新版本**（`git checkout main && git pull origin main`），確保本地包含 Release Please 合併後的版本號與 CHANGELOG
+   2. 再於最新版本上**手動執行** `bun publish --access public`
