@@ -59,6 +59,7 @@ export interface StorageBoxStats {
   used_gib: number;
   total_bytes: number;
   total_gib: number;
+  available_bytes: number;
   available_gib: number;
   usage_percent: number;
 }
@@ -68,13 +69,22 @@ export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats 
   const used_bytes = box.stats.size; // size = size_data + size_snapshots (total consumed)
   const total_bytes = box.storage_box_type.size;
   const GiB = 1024 ** 3;
+  // Derive availability from integer bytes, then convert. Numerically identical to
+  // (total_gib - used_gib) because GiB is a power of two, but it keeps the single
+  // source of truth in bytes and exposes available_bytes alongside its siblings.
+  //
+  // Deliberately NOT clamped to >= 0: Hetzner counts snapshots toward `stats.size`,
+  // so an over-quota box legitimately reports negative availability. Clamping would
+  // hide "you are 5 GiB over" behind "0 GiB free" while changing nothing about the
+  // assert outcome, which already fails on any required_gib > 0.
+  const available_bytes = total_bytes - used_bytes;
   const used_gib = used_bytes / GiB;
   const total_gib = total_bytes / GiB;
-  const available_gib = total_gib - used_gib;
+  const available_gib = available_bytes / GiB;
   const usage_percent = total_bytes > 0
     ? Math.round((used_bytes / total_bytes) * 10000) / 100
     : 0;
-  return { used_bytes, used_gib, total_bytes, total_gib, available_gib, usage_percent };
+  return { used_bytes, used_gib, total_bytes, total_gib, available_bytes, available_gib, usage_percent };
 }
 
 // Exported for unit testing.
@@ -1270,9 +1280,9 @@ Schedule options:
       description: `Get storage usage statistics for a specific Storage Box.
 
 Returns:
-- used_bytes / used_gib — current data usage
+- used_bytes / used_gib — total consumed space, **including snapshots** (Hetzner's \`stats.size\` = size_data + size_snapshots)
 - total_bytes / total_gib — plan capacity
-- available_gib — remaining free space
+- available_bytes / available_gib — remaining free space (negative when the box is over quota)
 - usage_percent — utilisation as a percentage (2 decimal places)
 
 Useful for dashboards, cron jobs, and pre-flight capacity checks before backup operations.`,
@@ -1325,11 +1335,16 @@ Useful for dashboards, cron jobs, and pre-flight capacity checks before backup o
       title: "Assert Storage Box Space",
       description: `Pre-flight space check: assert that a Storage Box has at least \`required_gib\` GiB of available space.
 
+Available space is derived from Hetzner's \`stats.size\`, which **includes snapshots**.
+
 Returns success if space is sufficient, or an error (isError: true) if space is insufficient.
+With \`response_format: "json"\` the payload is \`{ ok, required_gib, ...stats }\`; \`isError\` still
+reflects the outcome, so automation can branch on either.
 Designed for use in cron jobs and backup pipelines before executing storage-intensive operations.`,
       inputSchema: z.object({
         id: z.number().int().positive().describe("The Storage Box ID"),
-        required_gib: z.number().positive().describe("Minimum required free space in GiB")
+        required_gib: z.number().positive().describe("Minimum required free space in GiB"),
+        response_format: ResponseFormatSchema.describe("Output format: 'markdown' or 'json'")
       }).strict(),
       annotations: {
         readOnlyHint: true,
@@ -1342,8 +1357,16 @@ Designed for use in cron jobs and backup pipelines before executing storage-inte
       try {
         const data = await makeStorageBoxApiRequest(`/storage_boxes/${params.id}`, GetStorageBoxResponseSchema);
         const stats = computeStorageBoxStats(data.storage_box);
+        const ok = stats.available_gib >= params.required_gib;
 
-        if (stats.available_gib >= params.required_gib) {
+        if (params.response_format === ResponseFormat.JSON) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok, required_gib: params.required_gib, ...stats }, null, 2) }],
+            ...(ok ? {} : { isError: true })
+          };
+        }
+
+        if (ok) {
           return {
             content: [{
               type: "text",

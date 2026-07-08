@@ -1888,6 +1888,34 @@ describe("computeStorageBoxStats", () => {
     const stats = computeStorageBoxStats(box);
     expect(stats.usage_percent).toBe(33.33);
   });
+
+  it("derives available_bytes in integer bytes, exactly matching available_gib", () => {
+    // A total that is not a whole number of GiB, to catch any bytes↔GiB drift.
+    const total = 1024 * GiB + 12345;
+    const used = 707 * GiB + 999;
+    const box = {
+      ...baseBox,
+      storage_box_type: { ...baseBox.storage_box_type, size: total },
+      stats: { size: used, size_data: used, size_snapshots: 0 }
+    };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.available_bytes).toBe(total - used);
+    expect(stats.available_gib).toBe((total - used) / GiB);
+  });
+
+  it("reports negative availability when the box is over quota (snapshots count toward size)", () => {
+    const total = 1024 * GiB;
+    const used = total + 5 * GiB;
+    const box = {
+      ...baseBox,
+      storage_box_type: { ...baseBox.storage_box_type, size: total },
+      stats: { size: used, size_data: total, size_snapshots: 5 * GiB }
+    };
+    const stats = computeStorageBoxStats(box);
+    expect(stats.available_bytes).toBe(-5 * GiB);
+    expect(stats.available_gib).toBe(-5);
+    expect(stats.usage_percent).toBeGreaterThan(100);
+  });
 });
 
 // ── hetzner_get_storage_box_stats ────────────────────────────────────────────
@@ -1971,6 +1999,28 @@ describe("hetzner_assert_storage_box_space", () => {
     const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
     const result = await tool.handler({ id: 1, required_gib: 15 });
     expect(result.isError).toBeFalsy();
+  });
+
+  it("honours response_format=json and keeps ok=true without isError", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: makeBox(707, 1024) });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 15, response_format: "json" });
+    expect(result.isError).toBeFalsy();
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.ok).toBe(true);
+    expect(payload.required_gib).toBe(15);
+    expect(payload.available_gib).toBeCloseTo(1024 - 707, 0);
+    expect(payload.used_bytes).toBe(Math.round(707 * GiB));
+  });
+
+  it("honours response_format=json and still sets isError when ok=false", async () => {
+    mockedRequest.mockResolvedValueOnce({ storage_box: makeBox(1010, 1024) });
+    const tool = captureRegisteredTools().find((t) => t.name === "hetzner_assert_storage_box_space")!;
+    const result = await tool.handler({ id: 1, required_gib: 15, response_format: "json" });
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.ok).toBe(false);
+    expect(payload.available_gib).toBeCloseTo(14, 0);
   });
 
   it("returns isError on API failure", async () => {
