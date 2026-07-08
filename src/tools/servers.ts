@@ -34,7 +34,7 @@ function formatServer(server: HetznerServer): string {
     `- **IPv4**: ${ipv4}`,
     `- **IPv6**: ${ipv6}`,
     `- **Type**: ${server.server_type.name} (${server.server_type.cores} cores, ${server.server_type.memory}GB RAM, ${server.server_type.disk}GB disk)`,
-    `- **Location**: ${escapeHtml(server.datacenter.location.city)}, ${escapeHtml(server.datacenter.location.country)} (${escapeHtml(server.datacenter.name)})`
+    `- **Location**: ${escapeHtml(server.location.city)}, ${escapeHtml(server.location.country)} (${escapeHtml(server.location.name)})`
   ];
 
   if (server.image) {
