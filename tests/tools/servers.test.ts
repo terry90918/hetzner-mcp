@@ -29,13 +29,9 @@ const baseServer: HetznerServer = {
     ipv6: { ip: "2001:db8::1" }
   },
   server_type: { id: 1, name: "cx22", description: "CX22", cores: 2, memory: 4, disk: 40 },
-  location: {
-    id: 1,
-    name: "fsn1",
-    description: "Falkenstein DC Park 1",
-    country: "DE",
-    city: "Falkenstein"
-  },
+  // 只保留 schema 宣告的欄位，與 parse 後的實際形狀一致。
+  // 真實 API 多回傳的欄位由下方 rawApiServer 測試涵蓋。
+  location: { name: "fsn1", country: "DE", city: "Falkenstein" },
   image: { id: 1, name: "ubuntu-24.04", description: "Ubuntu 24.04", os_flavor: "ubuntu", os_version: "24.04" },
   labels: {},
   created: "2026-01-01T00:00:00+00:00"
