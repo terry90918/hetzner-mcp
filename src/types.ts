@@ -68,16 +68,18 @@ export const HetznerServerSchema = z.object({
     memory: z.number(),
     disk: z.number()
   }),
-  datacenter: z.object({
-    id: z.number(),
+  // Hetzner removed the `datacenter` property from the Servers API on 2026-06-30
+  // (announced 2025-12-16, "Phasing out Datacenters in favor of Locations").
+  // https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
+  //
+  // Only the fields formatServer() actually renders are declared. z.object already
+  // strips unknown keys, so listing fewer fields is strictly more tolerant of the
+  // next upstream change — a required field we never read is a crash waiting to
+  // happen (that is exactly how the datacenter removal broke every server tool).
+  location: z.object({
     name: z.string(),
-    description: z.string(),
-    location: z.object({
-      id: z.number(),
-      name: z.string(),
-      city: z.string(),
-      country: z.string()
-    })
+    country: z.string(),
+    city: z.string()
   }),
   image: z.object({
     id: z.number(),

@@ -12,7 +12,7 @@ vi.mock("../../src/api.js", async (importOriginal) => {
 import { registerServerTools } from "../../src/tools/servers.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { makeApiRequest } from "../../src/api.js";
-import { HetznerServer, ListServersResponse, ListServersResponseSchema } from "../../src/types.js";
+import { HetznerServer, HetznerServerSchema, ListServersResponse, ListServersResponseSchema } from "../../src/types.js";
 
 const mockedRequest = vi.mocked(makeApiRequest);
 
@@ -29,12 +29,9 @@ const baseServer: HetznerServer = {
     ipv6: { ip: "2001:db8::1" }
   },
   server_type: { id: 1, name: "cx22", description: "CX22", cores: 2, memory: 4, disk: 40 },
-  datacenter: {
-    id: 1,
-    name: "fsn1-dc14",
-    description: "Falkenstein DC Park 1",
-    location: { id: 1, name: "fsn1", city: "Falkenstein", country: "DE" }
-  },
+  // 只保留 schema 宣告的欄位，與 parse 後的實際形狀一致。
+  // 真實 API 多回傳的欄位由下方 rawApiServer 測試涵蓋。
+  location: { name: "fsn1", country: "DE", city: "Falkenstein" },
   image: { id: 1, name: "ubuntu-24.04", description: "Ubuntu 24.04", os_flavor: "ubuntu", os_version: "24.04" },
   labels: {},
   created: "2026-01-01T00:00:00+00:00"
@@ -72,6 +69,40 @@ function captureRegisteredTools(): CapturedTool[] {
   registerServerTools(fakeServer as unknown as McpServer);
   return captured;
 }
+
+describe("hetzner_list_servers — location rendering", () => {
+  // Regression: Hetzner removed `datacenter` from the Servers API on 2026-06-30.
+  // The formatter must read the top-level `location` object instead.
+  it("renders Location from the top-level location object", async () => {
+    const tools = captureRegisteredTools();
+    const handler = tools.find((t) => t.name === "hetzner_list_servers")!.handler;
+    mockedRequest.mockResolvedValueOnce(pageResponse([makeServer(1)], null));
+
+    const result = await handler({ response_format: "markdown" });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain("**Location**: Falkenstein, DE (fsn1)");
+  });
+
+  // The live payload carries no `datacenter` and extra location keys we never render.
+  // Declaring only the consumed fields must tolerate both.
+  it("parses a raw API payload with no datacenter and unknown extra keys", () => {
+    const rawApiServer = {
+      ...baseServer,
+      location: {
+        id: 1,
+        name: "fsn1",
+        description: "Falkenstein DC Park 1",
+        country: "DE",
+        city: "Falkenstein",
+        latitude: 50.47612,
+        longitude: 12.370071,
+        network_zone: "eu-central"
+      }
+    };
+    expect(() => HetznerServerSchema.parse(rawApiServer)).not.toThrow();
+  });
+});
 
 describe("hetzner_list_servers — auto-pagination", () => {
   it("fetches all pages and combines results", async () => {

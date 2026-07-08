@@ -60,12 +60,7 @@ const serverResponse = {
     status: "running",
     public_net: { ipv4: { ip: "91.99.173.93" }, ipv6: { ip: "2a01:4f8::1" } },
     server_type: { id: 22, name: "cx53", description: "CX53", cores: 16, memory: 32, disk: 320 },
-    datacenter: {
-      id: 2,
-      name: "nbg1-dc3",
-      description: "Nuremberg DC Park 1",
-      location: { id: 2, name: "nbg1", city: "Nuremberg", country: "DE" }
-    },
+    location: { id: 2, name: "nbg1", description: "Nuremberg DC Park 1", country: "DE", city: "Nuremberg" },
     image: { id: 1, name: "ubuntu-22.04", description: "Ubuntu 22.04", os_flavor: "ubuntu", os_version: "22.04" },
     labels: {},
     created: "2024-01-01T00:00:00+00:00"
