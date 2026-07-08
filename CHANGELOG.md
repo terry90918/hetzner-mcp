@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.4](https://github.com/jurislm/hetzner-mcp/compare/v1.4.3...v1.4.4) (2026-07-08)
+
+
+### Bug Fixes
+
+* **servers:** 改用 location 取代已被 Hetzner 移除的 datacenter 欄位 ([#53](https://github.com/jurislm/hetzner-mcp/issues/53)) ([b8d97ce](https://github.com/jurislm/hetzner-mcp/commit/b8d97ced15035f9ef94b9e2e259f3bc408480565))
+
+
+### Documentation
+
+* pull latest main before publishing a release ([#50](https://github.com/jurislm/hetzner-mcp/issues/50)) ([8951068](https://github.com/jurislm/hetzner-mcp/commit/89510682924f98ecfe3a3e48bfa4ec577182ce38))
+
 ## [1.4.3](https://github.com/jurislm/hetzner-mcp/compare/v1.4.2...v1.4.3) (2026-07-06)
 
 
