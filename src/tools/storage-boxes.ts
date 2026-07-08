@@ -40,6 +40,10 @@ const PATH_SEGMENT_TRAVERSAL_MSG =
 const ResponseFormatSchema = z.nativeEnum(ResponseFormat).default(ResponseFormat.MARKDOWN);
 const DEFAULT_PER_PAGE = 50;
 
+// Hetzner reports every size in bytes. Binary units (GiB/MiB), not decimal.
+const BYTES_PER_MIB = 1024 ** 2;
+const BYTES_PER_GIB = 1024 ** 3;
+
 // access_settings protocol keys in display order. Using a tuple instead of
 // BooleanKeys<HetznerStorageBox> because protocols are now nested inside
 // access_settings (unified API redesign — issue #13).
@@ -54,13 +58,45 @@ const STORAGE_BOX_PROTOCOL_KEYS = [
 // fails typecheck instead of silently filtering to false at runtime.
 const SUBACCOUNT_PROTOCOLS = ["ssh", "webdav", "samba"] as const satisfies readonly BooleanKeys<HetznerStorageBoxSubaccount>[];
 
+export interface StorageBoxStats {
+  used_bytes: number;
+  used_gib: number;
+  total_bytes: number;
+  total_gib: number;
+  available_bytes: number;
+  available_gib: number;
+  usage_percent: number;
+}
+
+// Exported for unit testing.
+export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats {
+  const used_bytes = box.stats.size; // size = size_data + size_snapshots (total consumed)
+  const total_bytes = box.storage_box_type.size;
+  // Derive availability from integer bytes, then convert. Numerically identical to
+  // (total_gib - used_gib) because a GiB is a power of two, but it keeps the single
+  // source of truth in bytes and exposes available_bytes alongside its siblings.
+  //
+  // Deliberately NOT clamped to >= 0: Hetzner counts snapshots toward `stats.size`,
+  // so an over-quota box legitimately reports negative availability. Clamping would
+  // hide "you are 5 GiB over" behind "0 GiB free" while changing nothing about the
+  // assert outcome, which already fails on any required_gib > 0.
+  const available_bytes = total_bytes - used_bytes;
+  const used_gib = used_bytes / BYTES_PER_GIB;
+  const total_gib = total_bytes / BYTES_PER_GIB;
+  const available_gib = available_bytes / BYTES_PER_GIB;
+  const usage_percent = total_bytes > 0
+    ? Math.round((used_bytes / total_bytes) * 10000) / 100
+    : 0;
+  return { used_bytes, used_gib, total_bytes, total_gib, available_bytes, available_gib, usage_percent };
+}
+
 // Exported for unit testing.
 export function formatBytes(bytes: number): string {
-  const gib = bytes / (1024 ** 3);
+  const gib = bytes / BYTES_PER_GIB;
   if (gib >= 1) {
     return `${gib.toFixed(1)} GiB`;
   }
-  return `${(bytes / (1024 ** 2)).toFixed(0)} MiB`;
+  return `${(bytes / BYTES_PER_MIB).toFixed(0)} MiB`;
 }
 
 // Exported for unit testing.
@@ -1235,6 +1271,125 @@ Schedule options:
         };
       } catch (error) {
         return { content: [{ type: "text", text: handleApiError(error) }], isError: true };
+      }
+    }
+  );
+
+  // Get Storage Box Stats
+  server.registerTool(
+    "hetzner_get_storage_box_stats",
+    {
+      title: "Get Storage Box Stats",
+      description: `Get storage usage statistics for a specific Storage Box.
+
+Returns:
+- used_bytes / used_gib — total consumed space, **including snapshots** (Hetzner's \`stats.size\` = size_data + size_snapshots)
+- total_bytes / total_gib — plan capacity
+- available_bytes / available_gib — remaining free space (negative when the box is over quota)
+- usage_percent — utilisation as a percentage (2 decimal places)
+
+Useful for dashboards, cron jobs, and pre-flight capacity checks before backup operations.`,
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("The Storage Box ID"),
+        response_format: ResponseFormatSchema.describe("Output format: 'markdown' or 'json'")
+      }).strict(),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const data = await makeStorageBoxApiRequest(`/storage_boxes/${params.id}`, GetStorageBoxResponseSchema);
+        const stats = computeStorageBoxStats(data.storage_box);
+
+        if (params.response_format === ResponseFormat.JSON) {
+          return {
+            content: [{ type: "text", text: JSON.stringify(stats, null, 2) }]
+          };
+        }
+
+        const lines = [
+          `# Storage Box ${params.id} — Usage Stats`,
+          "",
+          `- **Used**: ${formatBytes(stats.used_bytes)} (${stats.used_gib.toFixed(2)} GiB)`,
+          `- **Total**: ${formatBytes(stats.total_bytes)} (${stats.total_gib.toFixed(2)} GiB)`,
+          `- **Available**: ${stats.available_gib.toFixed(2)} GiB`,
+          `- **Usage**: ${stats.usage_percent.toFixed(2)}%`
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }]
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: handleApiError(error) }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Assert Storage Box Space
+  server.registerTool(
+    "hetzner_assert_storage_box_space",
+    {
+      title: "Assert Storage Box Space",
+      description: `Pre-flight space check: assert that a Storage Box has at least \`required_gib\` GiB of available space.
+
+Available space is derived from Hetzner's \`stats.size\`, which **includes snapshots**.
+
+Returns success if space is sufficient, or an error (isError: true) if space is insufficient.
+With \`response_format: "json"\` the payload is \`{ ok, required_gib, ...stats }\`; \`isError\` still
+reflects the outcome, so automation can branch on either.
+Designed for use in cron jobs and backup pipelines before executing storage-intensive operations.`,
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("The Storage Box ID"),
+        required_gib: z.number().positive().describe("Minimum required free space in GiB"),
+        response_format: ResponseFormatSchema.describe("Output format: 'markdown' or 'json'")
+      }).strict(),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const data = await makeStorageBoxApiRequest(`/storage_boxes/${params.id}`, GetStorageBoxResponseSchema);
+        const stats = computeStorageBoxStats(data.storage_box);
+        const ok = stats.available_gib >= params.required_gib;
+
+        if (params.response_format === ResponseFormat.JSON) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok, required_gib: params.required_gib, ...stats }, null, 2) }],
+            ...(ok ? {} : { isError: true })
+          };
+        }
+
+        if (ok) {
+          return {
+            content: [{
+              type: "text",
+              text: `✓ Storage Box ${params.id} has sufficient space: ${stats.available_gib.toFixed(2)} GiB available (required: ${params.required_gib} GiB, usage: ${stats.usage_percent.toFixed(2)}%).`
+            }]
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: `✗ Storage Box ${params.id} has insufficient space: ${stats.available_gib.toFixed(2)} GiB available but ${params.required_gib} GiB required (usage: ${stats.usage_percent.toFixed(2)}%, total: ${stats.total_gib.toFixed(2)} GiB).`
+          }],
+          isError: true
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: handleApiError(error) }],
+          isError: true
+        };
       }
     }
   );
