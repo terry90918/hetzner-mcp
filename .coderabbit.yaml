@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+language: "zh"
+tone_instructions: "一律使用繁體中文（台灣正體用語）撰寫審查意見與回覆。"
+reviews:
+  auto_review:
+    base_branches:
+      - "^main$"
+    # release-please 自動開的 release PR（標題固定 "chore(main): release X.Y.Z"）純版號/CHANGELOG，跳過審查
+    ignore_title_keywords:
+      - "chore(main): release"
