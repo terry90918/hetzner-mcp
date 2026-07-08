@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/jurislm/hetzner-mcp/compare/v1.4.4...v1.5.0) (2026-07-08)
+
+
+### Features
+
+* **storage-boxes:** 新增 hetzner_get_storage_box_stats 與 hetzner_assert_storage_box_space 工具 ([#54](https://github.com/jurislm/hetzner-mcp/issues/54)) ([3973582](https://github.com/jurislm/hetzner-mcp/commit/3973582548f04650c817a2700a33095b5d2a8e57))
+
 ## [1.4.4](https://github.com/jurislm/hetzner-mcp/compare/v1.4.3...v1.4.4) (2026-07-08)
 
 
