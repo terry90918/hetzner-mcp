@@ -40,6 +40,10 @@ const PATH_SEGMENT_TRAVERSAL_MSG =
 const ResponseFormatSchema = z.nativeEnum(ResponseFormat).default(ResponseFormat.MARKDOWN);
 const DEFAULT_PER_PAGE = 50;
 
+// Hetzner reports every size in bytes. Binary units (GiB/MiB), not decimal.
+const BYTES_PER_MIB = 1024 ** 2;
+const BYTES_PER_GIB = 1024 ** 3;
+
 // access_settings protocol keys in display order. Using a tuple instead of
 // BooleanKeys<HetznerStorageBox> because protocols are now nested inside
 // access_settings (unified API redesign — issue #13).
@@ -68,9 +72,8 @@ export interface StorageBoxStats {
 export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats {
   const used_bytes = box.stats.size; // size = size_data + size_snapshots (total consumed)
   const total_bytes = box.storage_box_type.size;
-  const GiB = 1024 ** 3;
   // Derive availability from integer bytes, then convert. Numerically identical to
-  // (total_gib - used_gib) because GiB is a power of two, but it keeps the single
+  // (total_gib - used_gib) because a GiB is a power of two, but it keeps the single
   // source of truth in bytes and exposes available_bytes alongside its siblings.
   //
   // Deliberately NOT clamped to >= 0: Hetzner counts snapshots toward `stats.size`,
@@ -78,9 +81,9 @@ export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats 
   // hide "you are 5 GiB over" behind "0 GiB free" while changing nothing about the
   // assert outcome, which already fails on any required_gib > 0.
   const available_bytes = total_bytes - used_bytes;
-  const used_gib = used_bytes / GiB;
-  const total_gib = total_bytes / GiB;
-  const available_gib = available_bytes / GiB;
+  const used_gib = used_bytes / BYTES_PER_GIB;
+  const total_gib = total_bytes / BYTES_PER_GIB;
+  const available_gib = available_bytes / BYTES_PER_GIB;
   const usage_percent = total_bytes > 0
     ? Math.round((used_bytes / total_bytes) * 10000) / 100
     : 0;
@@ -89,11 +92,11 @@ export function computeStorageBoxStats(box: HetznerStorageBox): StorageBoxStats 
 
 // Exported for unit testing.
 export function formatBytes(bytes: number): string {
-  const gib = bytes / (1024 ** 3);
+  const gib = bytes / BYTES_PER_GIB;
   if (gib >= 1) {
     return `${gib.toFixed(1)} GiB`;
   }
-  return `${(bytes / (1024 ** 2)).toFixed(0)} MiB`;
+  return `${(bytes / BYTES_PER_MIB).toFixed(0)} MiB`;
 }
 
 // Exported for unit testing.
